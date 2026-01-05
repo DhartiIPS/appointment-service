@@ -1,12 +1,5 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Controller } from '@nestjs/common';
+import { MessagePattern } from '@nestjs/microservices';
 import { AppointmentService, CreateAppointmentDto } from './appointment.service';
 import { AppointmentStatus } from '../enums/appoointment-status';
 
@@ -22,52 +15,41 @@ export class UpdateAppointmentDto {
 export class AppointmentController {
   constructor(private readonly appointmentService: AppointmentService) {}
 
-  @Post('book')
-  async bookAppointment(@Body() dto: CreateAppointmentDto) {
-    return await this.appointmentService.bookAppointment(dto);
+  @MessagePattern('book')
+  async bookAppointment(data: CreateAppointmentDto) {
+    return await this.appointmentService.bookAppointment(data);
   }
 
-  @Get('allappointment')
-  async getAllAppointments(
-    @Query('patientId') patientId?: string,
-    @Query('doctorId') doctorId?: string,
-  ) {
+  @MessagePattern('allappointment')
+  async getAllAppointments(data: { patientId?: number; doctorId?: number }) {
+    const { patientId, doctorId } = data;
     if (patientId) {
-      return this.appointmentService.getAppointmentsByPatient(
-        Number(patientId),
-      );
+      return this.appointmentService.getAppointmentsByPatient(patientId);
     }
     if (doctorId) {
-      return this.appointmentService.getUpcomingAppointments(Number(doctorId));
+      return this.appointmentService.getUpcomingAppointments(doctorId);
     }
+    return [];
   }
 
-  @Get('upcoming/:doctorId')
-  async getUpcomingAppointments(@Param('doctorId') doctorId: string) {
-    return await this.appointmentService.getUpcomingAppointments(
-      Number(doctorId),
-    );
+  @MessagePattern('get-appointment')
+  async getAppointment(data: { appointmentId: string }) {
+    return await this.appointmentService.getAppointmentsByPatient(Number(data.appointmentId));
   }
 
-  @Get('doctor-availability/:doctorId')
-  async getDoctorAvailability(
-    @Param('doctorId') doctorId: string,
-    @Query('date') date: string,
-  ) {
+  @MessagePattern('doctor-availability/:doctorId')
+  async getDoctorAvailability(data: { doctorId: number; date: string }) {
     return await this.appointmentService.getDoctorAvailability(
-      Number(doctorId),
-      date,
+      data.doctorId,
+      data.date,
     );
   }
 
-  @Patch('update/:appointmentId')
-  async updateAppointmentStatus(
-    @Param('appointmentId') appointmentId: string,
-    @Body() dto: UpdateAppointmentDto,
-  ) {
-    const { status, start_time, end_time, reason, changed_by } = dto;
+  @MessagePattern('update/:appointmentId')
+  async updateAppointmentStatus(data: { appointmentId: number } & UpdateAppointmentDto) {
+    const { appointmentId, status, start_time, end_time, reason, changed_by } = data;
     return await this.appointmentService.updateAppointmentStatus(
-      Number(appointmentId),
+      appointmentId,
       status,
       reason,
       changed_by,
@@ -76,84 +58,86 @@ export class AppointmentController {
     );
   }
 
-  @Get('history/:appointmentId')
-  async getAppointmentHistory(@Param('appointmentId') appointmentId: string) {
-    return await this.appointmentService.getAppointmentHistory(
-      Number(appointmentId),
-    );
+  @MessagePattern('history/:appointmentId')
+  async getAppointmentHistory(data: { appointmentId: number }) {
+    return await this.appointmentService.getAppointmentHistory(data.appointmentId);
   }
 
-  @Get('counts/:patientId')
-  async getAppointmentCounts(@Param('patientId') patientId: string) {
-    return await this.appointmentService.getAppointmentCounts(
-      Number(patientId),
-    );
+  @MessagePattern('counts/:patientId')
+  async getAppointmentCounts(data: { patientId: number }) {
+    return await this.appointmentService.getAppointmentCounts(data.patientId);
   }
 
-  @Get('doctor-counts/:doctorId')
-  async getDoctorAppointmentCounts(@Param('doctorId') doctorId: string) {
-    return await this.appointmentService.getDoctorAppointmentCounts(
-      Number(doctorId),
-    );
+  // FIX: Use single consistent pattern for doctor appointment counts
+  @MessagePattern('doctor_appointment_counts')
+  async getDoctorAppointmentCounts(data: { doctorId: number }) {
+    console.log('Received doctor_appointment_counts request:', data);
+    return await this.appointmentService.getDoctorAppointmentCounts(Number(data.doctorId));
   }
 
-  @Patch('cancel/:appointmentId')
-  async cancelAppointment(
-    @Param('appointmentId') appointmentId: string,
-    @Body() body: { reason?: string; cancelled_by?: number },
-  ) {
+  @MessagePattern('cancel/:appointmentId')
+  async cancelAppointment(data: { appointmentId: number; reason?: string; cancelled_by?: number }) {
     return await this.appointmentService.updateAppointmentStatus(
-      Number(appointmentId),
+      data.appointmentId,
       AppointmentStatus.cancelled,
-      body.reason || 'Appointment cancelled',
-      body.cancelled_by,
+      data.reason || 'Appointment cancelled',
+      data.cancelled_by,
     );
   }
 
-  @Patch('confirm/:appointmentId')
-  async confirmAppointment(
-    @Param('appointmentId') appointmentId: string,
-    @Body() body: { confirmed_by?: number },
-  ) {
+  @MessagePattern('confirm/:appointmentId')
+  async confirmAppointment(data: { appointmentId: number; confirmed_by?: number }) {
     return await this.appointmentService.updateAppointmentStatus(
-      Number(appointmentId),
+      data.appointmentId,
       AppointmentStatus.confirmed,
       'Appointment confirmed',
-      body.confirmed_by,
+      data.confirmed_by,
     );
   }
 
-  @Patch('complete/:appointmentId')
-  async completeAppointment(
-    @Param('appointmentId') appointmentId: string,
-    @Body() body: { completed_by?: number; notes?: string },
-  ) {
+  @MessagePattern('complete/:appointmentId')
+  async completeAppointment(data: { appointmentId: number; completed_by?: number; notes?: string }) {
     return await this.appointmentService.updateAppointmentStatus(
-      Number(appointmentId),
+      data.appointmentId,
       AppointmentStatus.completed,
-      body.notes || 'Appointment completed',
-      body.completed_by,
+      data.notes || 'Appointment completed',
+      data.completed_by,
     );
   }
 
-  @Patch('reschedule/:appointmentId')
-  async rescheduleAppointment(
-    @Param('appointmentId') appointmentId: string,
-    @Body()
-    body: {
-      start_time: string;
-      end_time: string;
-      reason?: string;
-      rescheduled_by?: number;
-    },
-  ) {
+  @MessagePattern('reschedule/:appointmentId')
+  async rescheduleAppointment(data: {
+    appointmentId: number;
+    start_time: string;
+    end_time: string;
+    reason?: string;
+    rescheduled_by?: number;
+  }) {
     return await this.appointmentService.updateAppointmentStatus(
-      Number(appointmentId),
+      data.appointmentId,
       AppointmentStatus.rescheduled,
-      body.reason || 'Appointment rescheduled',
-      body.rescheduled_by,
-      body.start_time,
-      body.end_time,
+      data.reason || 'Appointment rescheduled',
+      data.rescheduled_by,
+      data.start_time,
+      data.end_time,
     );
+  }
+
+  @MessagePattern('doctor-profile')
+  async getDoctorProfile(data: { doctorId: number }) {
+    // Implement or delegate to doctor service
+    return { doctorId: data.doctorId, message: 'Doctor profile placeholder' };
+  }
+
+  @MessagePattern('search-doctors')
+  async searchDoctors(data: any) {
+    // Implement or delegate to doctor service
+    return { message: 'Search doctors placeholder', query: data };
+  }
+
+  @MessagePattern('get-hospitals')
+  async getHospitals() {
+    // Implement or delegate to hospital service
+    return { message: 'Hospitals list placeholder' };
   }
 }

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AppointmentController } from './appointment/appointments.controller';
 import { AppointmentService } from './appointment/appointment.service';
 import { Appointment } from './entities/appointment.entity';
 import { AppointmentHistory } from './entities/appointment-history.entity';
@@ -34,13 +35,14 @@ import { Notification } from './entities/notification.entity'; // Add this impor
       inject: [ConfigService],
     }),
     
+    
     TypeOrmModule.forFeature([
       Appointment, 
       AppointmentHistory,
       Notification  // Add this
     ]),
   ],
-  controllers: [AppController],
+  controllers: [AppController, AppointmentController],
   providers: [AppService, AppointmentService],
 })
 export class AppModule {}
