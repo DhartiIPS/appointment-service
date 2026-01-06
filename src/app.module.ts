@@ -5,9 +5,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AppointmentController } from './appointment/appointments.controller';
 import { AppointmentService } from './appointment/appointment.service';
-import { Appointment } from './entities/appointment.entity';
-import { AppointmentHistory } from './entities/appointment-history.entity';
-import { Notification } from './entities/notification.entity'; // Add this import
+import { Appointment } from './appointment/appointment.entity';
+import { AppointmentHistory } from './appointment/appointment-history.entity';
 
 @Module({
   imports: [
@@ -27,7 +26,6 @@ import { Notification } from './entities/notification.entity'; // Add this impor
         entities: [
           Appointment, 
           AppointmentHistory,
-          Notification  // Add this
         ],
         synchronize: configService.get('NODE_ENV') !== 'production',
         logging: true,
@@ -39,7 +37,6 @@ import { Notification } from './entities/notification.entity'; // Add this impor
     TypeOrmModule.forFeature([
       Appointment, 
       AppointmentHistory,
-      Notification  // Add this
     ]),
   ],
   controllers: [AppController, AppointmentController],

@@ -24,7 +24,7 @@ export class AppointmentController {
   async getAllAppointments(data: { patientId?: number; doctorId?: number }) {
     const { patientId, doctorId } = data;
     if (patientId) {
-      return this.appointmentService.getAppointmentsByPatient(patientId);
+      // return this.appointmentService.getAppointmentsByPatient(patientId);
     }
     if (doctorId) {
       return this.appointmentService.getUpcomingAppointments(doctorId);
@@ -34,10 +34,10 @@ export class AppointmentController {
 
   @MessagePattern('get-appointment')
   async getAppointment(data: { appointmentId: string }) {
-    return await this.appointmentService.getAppointmentsByPatient(Number(data.appointmentId));
+    // return await this.appointmentService.getAppointmentsByPatient(Number(data.appointmentId));
   }
 
-  @MessagePattern('doctor-availability/:doctorId')
+  @MessagePattern('doctor_availability')
   async getDoctorAvailability(data: { doctorId: number; date: string }) {
     return await this.appointmentService.getDoctorAvailability(
       data.doctorId,
@@ -63,12 +63,11 @@ export class AppointmentController {
     return await this.appointmentService.getAppointmentHistory(data.appointmentId);
   }
 
-  @MessagePattern('counts/:patientId')
-  async getAppointmentCounts(data: { patientId: number }) {
-    return await this.appointmentService.getAppointmentCounts(data.patientId);
+  @MessagePattern('patient_appointment_counts')
+  getPatientAppointmentCounts(data: { patientId: number }) {
+    return this.appointmentService.getAppointmentCounts(data.patientId);
   }
-
-  // FIX: Use single consistent pattern for doctor appointment counts
+  
   @MessagePattern('doctor_appointment_counts')
   async getDoctorAppointmentCounts(data: { doctorId: number }) {
     console.log('Received doctor_appointment_counts request:', data);

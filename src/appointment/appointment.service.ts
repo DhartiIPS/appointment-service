@@ -1,10 +1,10 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThanOrEqual } from 'typeorm';
-import { Appointment } from '../entities/appointment.entity';
-import { AppointmentHistory } from '../entities/appointment-history.entity';
+import { Appointment } from './appointment.entity';
 import { AppointmentStatus } from '../enums/appoointment-status';
 import { DayOfWeek } from '../enums/day-of-week.enum';
+import { AppointmentHistory } from './appointment-history.entity';
 export class CreateAppointmentDto {
   patient_id: number;
   doctor_id: number;
@@ -52,10 +52,9 @@ export class AppointmentService {
     private appointmentRepository: Repository<Appointment>,
     @InjectRepository(AppointmentHistory)
     private appointmentHistoryRepository: Repository<AppointmentHistory>,
-  ) {}
+  ) { }
 
   async bookAppointment(dto: CreateAppointmentDto) {
-    // Validate time format
     if (dto.start_time && dto.end_time) {
       try {
         timeStringToMinutes(dto.start_time);
@@ -66,8 +65,6 @@ export class AppointmentService {
     }
 
     const appointmentDate = new Date(dto.appointment_date);
-
-    // Check if patient already has an appointment on this date
     const patientExistingAppointment = await this.appointmentRepository.findOne({
       where: {
         patient_id: dto.patient_id,
@@ -86,23 +83,12 @@ export class AppointmentService {
     const dayString = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' });
     const appointmentDay: DayOfWeek = DayOfWeek[dayString as keyof typeof DayOfWeek];
 
-    // Note: Doctor availability check would require DoctorAvailability entity
-    // This is a placeholder for microservice communication
-    // You would call doctor service via RPC/REST to check availability
     const doctorAvailability = await this.checkDoctorAvailability(
       dto.doctor_id,
       appointmentDay
     );
-
-    if (!doctorAvailability || doctorAvailability.length === 0) {
-      throw new HttpException(
-        `Doctor is not available on ${appointmentDay}. Please choose another day.`,
-        HttpStatus.CONFLICT
-      );
-    }
-
-    // Validate time against doctor's availability
-    if (dto.start_time && dto.end_time) {
+    const hasAvailability = Array.isArray(doctorAvailability) && doctorAvailability.length > 0;
+    if (dto.start_time && dto.end_time && hasAvailability) {
       const isTimeValid = doctorAvailability.some(
         slot => dto.start_time >= slot.start_time && dto.end_time <= slot.end_time
       );
@@ -113,8 +99,6 @@ export class AppointmentService {
           HttpStatus.CONFLICT
         );
       }
-
-      // Check for overlapping appointments
       const existingAppointments = await this.appointmentRepository.find({
         where: {
           doctor_id: dto.doctor_id,
@@ -139,8 +123,6 @@ export class AppointmentService {
         );
       }
     }
-
-    // Create appointment with transaction
     const queryRunner = this.appointmentRepository.manager.connection.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -156,8 +138,6 @@ export class AppointmentService {
       });
 
       const savedAppointment = await queryRunner.manager.save(appointment);
-
-      // Create history entry
       const history = this.appointmentHistoryRepository.create({
         appointment_id: savedAppointment.appointment_id,
         old_status: dto.status || AppointmentStatus.scheduled,
@@ -168,10 +148,7 @@ export class AppointmentService {
       await queryRunner.manager.save(history);
 
       await queryRunner.commitTransaction();
-
-      // Emit events for notification service (microservice pattern)
       await this.emitAppointmentCreatedEvent(savedAppointment, dto);
-
       return savedAppointment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -284,62 +261,62 @@ export class AppointmentService {
     return gaps;
   }
 
- async updateAppointmentStatus(
-  appointment_id: number,
-  newStatus: AppointmentStatus,
-  reason?: string,
-  changedBy?: number,
-  startTime?: string,
-  endTime?: string
-) {
-  const appointment = await this.appointmentRepository.findOne({
-    where: { appointment_id },
-  });
+  async updateAppointmentStatus(
+    appointment_id: number,
+    newStatus: AppointmentStatus,
+    reason?: string,
+    changedBy?: number,
+    startTime?: string,
+    endTime?: string
+  ) {
+    const appointment = await this.appointmentRepository.findOne({
+      where: { appointment_id },
+    });
 
-  if (!appointment) {
-    throw new HttpException('Appointment not found', HttpStatus.NOT_FOUND);
-  }
-
-  const queryRunner = this.appointmentRepository.manager.connection.createQueryRunner();
-  await queryRunner.connect();
-  await queryRunner.startTransaction();
-
-  try {
-    const oldStatus = appointment.status; // Save old status before updating
-    
-    appointment.status = newStatus;
-    if (startTime) appointment.start_time = startTime;
-    if (endTime) appointment.end_time = endTime;
-
-    const updated = await queryRunner.manager.save(appointment);
-
-    const historyData: any = {
-      appointment: updated, // Pass the appointment entity, not appointment_id
-      old_status: oldStatus, // Use the saved old status
-      new_status: newStatus,
-      change_reason: reason || 'Status updated',
-    };
-    if (changedBy !== undefined && changedBy !== null) {
-      historyData.changed_by = changedBy;
+    if (!appointment) {
+      throw new HttpException('Appointment not found', HttpStatus.NOT_FOUND);
     }
 
-    const history = this.appointmentHistoryRepository.create(historyData);
+    const queryRunner = this.appointmentRepository.manager.connection.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    await queryRunner.manager.save(history);
+    try {
+      const oldStatus = appointment.status; // Save old status before updating
 
-    await queryRunner.commitTransaction();
+      appointment.status = newStatus;
+      if (startTime) appointment.start_time = startTime;
+      if (endTime) appointment.end_time = endTime;
 
-    // Emit status change event
-    await this.emitAppointmentStatusChangedEvent(updated);
+      const updated = await queryRunner.manager.save(appointment);
 
-    return updated;
-  } catch (error) {
-    await queryRunner.rollbackTransaction();
-    throw error;
-  } finally {
-    await queryRunner.release();
+      const historyData: any = {
+        appointment: updated, // Pass the appointment entity, not appointment_id
+        old_status: oldStatus, // Use the saved old status
+        new_status: newStatus,
+        change_reason: reason || 'Status updated',
+      };
+      if (changedBy !== undefined && changedBy !== null) {
+        historyData.changed_by = changedBy;
+      }
+
+      const history = this.appointmentHistoryRepository.create(historyData);
+
+      await queryRunner.manager.save(history);
+
+      await queryRunner.commitTransaction();
+
+      // Emit status change event
+      await this.emitAppointmentStatusChangedEvent(updated);
+
+      return updated;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
-}
 
   async getAppointmentHistory(appointment_id: number) {
     return await this.appointmentHistoryRepository.find({
@@ -348,12 +325,17 @@ export class AppointmentService {
     });
   }
 
-  async getAppointmentsByPatient(patientId: number) {
-    return await this.appointmentRepository.find({
-      where: { patient_id: patientId },
-      order: { appointment_date: 'ASC' },
-    });
-  }
+//  async getAppointmentsByPatient(patientId: number) {
+//     return await this.appointmentRepository
+//       .createQueryBuilder('appointment')
+//       .leftJoin(User, 'patient', 'patient.user_id = appointment.patient_id')
+//       .leftJoin(User, 'doctor', 'doctor.user_id = appointment.doctor_id')
+//       .addSelect('patient.full_name', 'patient_name')
+//       .addSelect('doctor.full_name', 'doctor_name')
+//       .where('appointment.patient_id = :patientId', { patientId })
+//       .orderBy('appointment.appointment_date', 'ASC')
+//       .getRawMany();
+// }
 
   async getAppointmentCounts(patientId: number) {
     const today = new Date();

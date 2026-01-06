@@ -1,11 +1,7 @@
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
-import { User } from '../entities/user.entity';
-import { DoctorAvailability } from '../entities/doctor-availability.entity';
-import { AdminSettings } from '../entities/admin-settings.entity';
-import { DoctorProfile } from '../entities/doctor-profile.entity';
-import { DoctorHospital } from '../entities/doctor-specialty.entity';
-import { Hospital } from '../entities/hospital.entity';
+import { AppointmentHistory } from 'src/appointment/appointment-history.entity';
+import { Appointment } from 'src/appointment/appointment.entity';
 
 dotenv.config();
 
@@ -13,10 +9,10 @@ export const AppDataSource = new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST || 'localhost',
   port: Number(process.env.DB_PORT || 5432),
-  username: process.env.DB_USER || 'postgres',  // Changed from DB_USERNAME to DB_USER
+  username: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'appointment_doctor',
-  entities: [User, DoctorAvailability, AdminSettings, DoctorProfile, DoctorHospital, Hospital],
+  database: process.env.DB_NAME || 'microservice_db',
+  entities: [Appointment, AppointmentHistory],
   migrations: ['src/database/migrations/*{.ts,.js}'],
   synchronize: false,
   logging: true,
