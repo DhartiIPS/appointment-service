@@ -21,20 +21,23 @@ export class AppointmentController {
   }
 
   @MessagePattern('allappointment')
-  async getAllAppointments(data: { patientId?: number; doctorId?: number }) {
-    const { patientId, doctorId } = data;
-    if (patientId) {
-      // return this.appointmentService.getAppointmentsByPatient(patientId);
-    }
-    if (doctorId) {
-      return this.appointmentService.getUpcomingAppointments(doctorId);
-    }
-    return [];
+  async getAllAppointments(data: { patientId?: number; doctorId?: number; userId?: number }) {
+  const patientId = data.patientId || data.userId; 
+  const doctorId = data.doctorId;
+
+  if (patientId) {
+    return this.appointmentService.getAppointmentsByPatient(patientId);
   }
+  if (doctorId) {
+    return this.appointmentService.getUpcomingAppointments(doctorId);
+  }
+  
+  return [];
+}
 
   @MessagePattern('get-appointment')
   async getAppointment(data: { appointmentId: string }) {
-    // return await this.appointmentService.getAppointmentsByPatient(Number(data.appointmentId));
+    return await this.appointmentService.getAppointmentsByPatient(Number(data.appointmentId));
   }
 
   @MessagePattern('doctor_availability')
@@ -138,5 +141,10 @@ export class AppointmentController {
   async getHospitals() {
     // Implement or delegate to hospital service
     return { message: 'Hospitals list placeholder' };
+  }
+
+  @MessagePattern('get_upcoming_appointments')
+  async getUpcomingAppointments(data: { doctor: number }) {
+    return await this.appointmentService.getUpcomingAppointments(data.doctor);
   }
 }

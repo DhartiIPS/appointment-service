@@ -5,9 +5,13 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { AppointmentHistory } from './appointment-history.entity';
-import { AppointmentStatus } from '../enums/appoointment-status'; // Import from enum file
+import { AppointmentStatus } from '../enums/appoointment-status';
+import { User } from './user.entity';
+import { Notification } from './notification.entity';
 
 @Entity('appointments')
 export class Appointment {
@@ -40,4 +44,15 @@ export class Appointment {
 
   @OneToMany(() => AppointmentHistory, (history) => history.appointment)
   history: AppointmentHistory[];
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'patient_id' })
+  patient: User;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'doctor_id' })
+  doctor: User;
+
+  @OneToMany(() => Notification, (notification) => notification.appointment)
+  notifications: Notification[];
 }

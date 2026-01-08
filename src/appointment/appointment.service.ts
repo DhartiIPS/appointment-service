@@ -5,6 +5,7 @@ import { Appointment } from './appointment.entity';
 import { AppointmentStatus } from '../enums/appoointment-status';
 import { DayOfWeek } from '../enums/day-of-week.enum';
 import { AppointmentHistory } from './appointment-history.entity';
+import { NotificationService } from './notifications.service';
 export class CreateAppointmentDto {
   patient_id: number;
   doctor_id: number;
@@ -52,10 +53,11 @@ export class AppointmentService {
     private appointmentRepository: Repository<Appointment>,
     @InjectRepository(AppointmentHistory)
     private appointmentHistoryRepository: Repository<AppointmentHistory>,
+    private readonly notificationService: NotificationService,
   ) { }
 
   async bookAppointment(dto: CreateAppointmentDto) {
-    if (dto.start_time && dto.end_time) {
+    if (dto.start_time?.trim() && dto.end_time?.trim()) {
       try {
         timeStringToMinutes(dto.start_time);
         timeStringToMinutes(dto.end_time);
@@ -65,6 +67,7 @@ export class AppointmentService {
     }
 
     const appointmentDate = new Date(dto.appointment_date);
+
     const patientExistingAppointment = await this.appointmentRepository.findOne({
       where: {
         patient_id: dto.patient_id,
@@ -79,15 +82,12 @@ export class AppointmentService {
         HttpStatus.CONFLICT
       );
     }
-
     const dayString = appointmentDate.toLocaleDateString('en-US', { weekday: 'long' });
     const appointmentDay: DayOfWeek = DayOfWeek[dayString as keyof typeof DayOfWeek];
 
-    const doctorAvailability = await this.checkDoctorAvailability(
-      dto.doctor_id,
-      appointmentDay
-    );
+    const doctorAvailability = await this.checkDoctorAvailability(dto.doctor_id, appointmentDay);
     const hasAvailability = Array.isArray(doctorAvailability) && doctorAvailability.length > 0;
+
     if (dto.start_time && dto.end_time && hasAvailability) {
       const isTimeValid = doctorAvailability.some(
         slot => dto.start_time >= slot.start_time && dto.end_time <= slot.end_time
@@ -99,6 +99,7 @@ export class AppointmentService {
           HttpStatus.CONFLICT
         );
       }
+
       const existingAppointments = await this.appointmentRepository.find({
         where: {
           doctor_id: dto.doctor_id,
@@ -108,12 +109,7 @@ export class AppointmentService {
       });
 
       const hasOverlap = existingAppointments.some((apt) =>
-        doTimeSlotsOverlap(
-          apt.start_time,
-          apt.end_time,
-          dto.start_time,
-          dto.end_time
-        )
+        doTimeSlotsOverlap(apt.start_time, apt.end_time, dto.start_time, dto.end_time)
       );
 
       if (hasOverlap) {
@@ -132,23 +128,37 @@ export class AppointmentService {
         patient_id: dto.patient_id,
         doctor_id: dto.doctor_id,
         appointment_date: appointmentDate,
-        start_time: dto.start_time || '',
-        end_time: dto.end_time || '',
+        start_time: dto.start_time?.trim() || '',
+        end_time: dto.end_time?.trim() || '',
         status: dto.status || AppointmentStatus.scheduled,
       });
 
       const savedAppointment = await queryRunner.manager.save(appointment);
+
       const history = this.appointmentHistoryRepository.create({
         appointment_id: savedAppointment.appointment_id,
         old_status: dto.status || AppointmentStatus.scheduled,
         new_status: dto.status || AppointmentStatus.scheduled,
         change_reason: 'Appointment created',
       });
-
       await queryRunner.manager.save(history);
-
       await queryRunner.commitTransaction();
       await this.emitAppointmentCreatedEvent(savedAppointment, dto);
+
+      await this.notificationService.createNotification(
+        dto.patient_id,
+        'Appointment Confirmed',
+        `Your appointment with Doctor ID ${dto.doctor_id} has been confirmed for ${appointmentDate.toDateString()} from ${dto.start_time} to ${dto.end_time}.`,
+        savedAppointment.appointment_id
+      );
+
+      await this.notificationService.createNotification(
+        dto.doctor_id,
+        'New Appointment Scheduled',
+        `You have a new appointment with Patient ID ${dto.patient_id} on ${appointmentDate.toDateString()} from ${dto.start_time} to ${dto.end_time}.`,
+        savedAppointment.appointment_id
+      );
+
       return savedAppointment;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -158,15 +168,32 @@ export class AppointmentService {
     }
   }
 
+
   async getUpcomingAppointments(doctor_id: number) {
-    return this.appointmentRepository.find({
-      where: {
-        doctor_id,
-        appointment_date: MoreThanOrEqual(new Date()),
-        status: In([AppointmentStatus.scheduled, AppointmentStatus.confirmed]),
-      },
-      order: { appointment_date: 'ASC' },
-    });
+    const results = await this.appointmentRepository
+      .createQueryBuilder('appointments')
+      .leftJoin('users', 'patient', 'patient.user_id = appointments.patient_id')
+      .leftJoin('users', 'doctor', 'doctor.user_id = appointments.doctor_id')
+      .select([
+        'appointments.appointment_id AS "appointmentId"',
+        'appointments.appointment_date AS "appointmentDate"',
+        'appointments.start_time AS "startTime"',
+        'appointments.end_time AS "endTime"',
+        'appointments.status AS "status"',
+        'patient.full_name AS "patientName"',
+        'patient.user_id AS "patientId"',
+        'doctor.full_name AS "doctorName"',
+        'doctor.user_id AS "doctorId"',
+      ])
+      .where('appointments.doctor_id = :doctor_id', { doctor_id })
+      .andWhere('appointments.appointment_date >= :today', { today: new Date() })
+      .andWhere('appointments.status IN (:...statuses)', {
+        statuses: [AppointmentStatus.scheduled, AppointmentStatus.confirmed]
+      })
+      .orderBy('appointments.appointment_date', 'ASC')
+      .getRawMany();
+
+    return results;
   }
 
   async getDoctorAvailability(doctorId: number, date: string) {
@@ -325,17 +352,35 @@ export class AppointmentService {
     });
   }
 
-//  async getAppointmentsByPatient(patientId: number) {
-//     return await this.appointmentRepository
-//       .createQueryBuilder('appointment')
-//       .leftJoin(User, 'patient', 'patient.user_id = appointment.patient_id')
-//       .leftJoin(User, 'doctor', 'doctor.user_id = appointment.doctor_id')
-//       .addSelect('patient.full_name', 'patient_name')
-//       .addSelect('doctor.full_name', 'doctor_name')
-//       .where('appointment.patient_id = :patientId', { patientId })
-//       .orderBy('appointment.appointment_date', 'ASC')
-//       .getRawMany();
-// }
+  async getAppointmentsByPatient(patientId: number | string) {
+    const id = Number(patientId);
+
+    const results = await this.appointmentRepository
+      .createQueryBuilder('appointments')
+      .leftJoin('users', 'patient', 'patient.user_id = appointments.patient_id')
+      .leftJoin('users', 'doctor', 'doctor.user_id = appointments.doctor_id')
+      .select([
+        'appointments.appointment_id AS "appointmentId"',
+        'appointments.appointment_date AS "appointmentDate"',
+        'appointments.start_time AS "startTime"',
+        'appointments.end_time AS "endTime"',
+        'appointments.status AS "status"',
+        'patient.full_name AS "patientName"',
+        'patient.user_id AS "patientId"',
+        'patient.email AS "patientEmail"',
+        'patient.phone AS "patientPhone"',
+        'doctor.full_name AS "doctorName"',
+        'doctor.email AS "doctorEmail"',
+        'doctor.phone AS "doctorPhone"',
+        'doctor.user_id AS "doctorId"',
+      ])
+      .where('appointments.patient_id = :id', { id })
+      .orderBy('appointments.appointment_date', 'ASC')
+      .getRawMany();
+
+    return results;
+  }
+
 
   async getAppointmentCounts(patientId: number) {
     const today = new Date();

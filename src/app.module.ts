@@ -7,6 +7,10 @@ import { AppointmentController } from './appointment/appointments.controller';
 import { AppointmentService } from './appointment/appointment.service';
 import { Appointment } from './appointment/appointment.entity';
 import { AppointmentHistory } from './appointment/appointment-history.entity';
+import { User } from './appointment/user.entity';
+import { Notification } from './appointment/notification.entity';
+import { NotificationService } from './appointment/notifications.service';
+import { NotificationController } from './appointment/notifications.controller';
 
 @Module({
   imports: [
@@ -24,8 +28,10 @@ import { AppointmentHistory } from './appointment/appointment-history.entity';
         password: configService.get('DB_PASSWORD') || 'ips12345',
         database: configService.get('DB_NAME') || 'appointment_doctor',
         entities: [
-          Appointment, 
+          Appointment,
           AppointmentHistory,
+          User,
+          Notification
         ],
         synchronize: configService.get('NODE_ENV') !== 'production',
         logging: true,
@@ -35,11 +41,13 @@ import { AppointmentHistory } from './appointment/appointment-history.entity';
     
     
     TypeOrmModule.forFeature([
-      Appointment, 
+      Appointment,
       AppointmentHistory,
+      User,
+      Notification
     ]),
   ],
-  controllers: [AppController, AppointmentController],
-  providers: [AppService, AppointmentService],
+  controllers: [AppController, AppointmentController,NotificationController],
+  providers: [AppService, AppointmentService,NotificationService],
 })
 export class AppModule {}
